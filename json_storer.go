@@ -13,10 +13,6 @@ type JSONStorer struct {
 	filepath string
 }
 
-type Stats struct {
-	Data map[string]int `json:"data"`
-}
-
 // NewJSONStorer creates a new JSONStorer instance
 func NewJSONStorer(filepath string) *JSONStorer {
 	return &JSONStorer{filepath: filepath}
