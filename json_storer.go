@@ -19,6 +19,7 @@ func NewJSONStorer(filepath string) *JSONStorer {
 }
 
 // loadStats loads the stats from the JSON file
+// Note: This method is not thread-safe and should only be called from locked methods
 func (s *JSONStorer) loadStats() (map[string]int, error) {
 	statsFile := filepath.Join(s.filepath, "stats.json")
 
@@ -39,6 +40,7 @@ func (s *JSONStorer) loadStats() (map[string]int, error) {
 }
 
 // saveStats saves the stats to the JSON file
+// Note: This method is not thread-safe and should only be called from locked methods
 func (s *JSONStorer) saveStats(stats map[string]int) error {
 	// Ensure directory exists
 	if err := os.MkdirAll(s.filepath, os.ModePerm); err != nil {
