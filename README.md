@@ -24,11 +24,11 @@ Babbler is a Go library that serves fake sensitive files (like `.env`, `config.p
 package main
 
 import (
-    "github.com/jpierer/babbler"
     "net/http"
 
     "github.com/go-chi/chi/middleware"
     "github.com/go-chi/chi/v5"
+    "github.com/jpierer/babbler"
 )
 
 func main() {
