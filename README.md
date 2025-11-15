@@ -59,11 +59,10 @@ func main() {
 	// Honeypot routes that catch common attack patterns and waste bot time
 	// These need to be BEFORE any general slug routes to catch .php and .env files
 
-	// First: catch files in subdirectories (must be before single-segment routes)
+	// First: catch files in single subdirectory level (e.g., /wp-content/file.php)
 	r.Route("/{segment}", func(sr chi.Router) {
 		sr.Get("/{file}.php", babblerInstance.BabbleHandler("php"))
 		sr.Get("/{file}.env", babblerInstance.BabbleHandler("env"))
-		// This allows /wp-content/themes/about.php, /config/database.php, etc.
 	})
 
 	// Second: catch files in root directory
