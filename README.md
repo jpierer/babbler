@@ -84,11 +84,6 @@ func main() {
 	// 	http.NotFound(w, r)
 	// })
 
-
-	// Additional dynamic routes of your web app (if needed for your project)
-	// r.Get("/{slug}/*", someOtherHandler())  // This would come AFTER babble routes
-	// r.Get("/{slug}", somePageHandler())     // This would come AFTER babble routes
-
 	port := ":8080"
 	log.Printf("Server starting on http://localhost%s", port)
 	log.Printf("Babbler Stats available at: http://localhost%s/babbler/stats", port)
@@ -101,7 +96,7 @@ func main() {
 
 ### Support Me
 
-Give a star if this project was helpful in any way!
+Give a :star: if this project was helpful in any way!
 
 ### License
 
