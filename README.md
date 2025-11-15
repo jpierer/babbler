@@ -69,6 +69,22 @@ func main() {
 	r.Get("/{file}.php", babblerInstance.BabbleHandler("php"))
 	r.Get("/{file}.env", babblerInstance.BabbleHandler("env"))
 
+	// Or you can use a wildcard route to catch files at any depth
+	// r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
+	// 	path := r.URL.Path
+	// 	if strings.HasSuffix(path, ".php") {
+	// 		babblerInstance.BabbleHandler("php")(w, r)
+	// 		return
+	// 	}
+	// 	if strings.HasSuffix(path, ".env") {
+	// 		babblerInstance.BabbleHandler("env")(w, r)
+	// 		return
+	// 	}
+	// 	// If not a honeypot file, return 404
+	// 	http.NotFound(w, r)
+	// })
+
+
 	// Additional dynamic routes of your web app (if needed for your project)
 	// r.Get("/{slug}/*", someOtherHandler())  // This would come AFTER babble routes
 	// r.Get("/{slug}", somePageHandler())     // This would come AFTER babble routes
