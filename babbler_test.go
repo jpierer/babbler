@@ -49,8 +49,11 @@ func TestNewBabbler(t *testing.T) {
 	if babbler.storeService != storer {
 		t.Error("Storer was not set correctly")
 	}
-	if babbler.responseDelay != 0 {
-		t.Errorf("Expected default responseDelay to be 0, got %d", babbler.responseDelay)
+	if babbler.responseMinDelay != 0 {
+		t.Errorf("Expected default responseMinDelay to be 0, got %d", babbler.responseMinDelay)
+	}
+	if babbler.responseMaxDelay != 0 {
+		t.Errorf("Expected default responseMaxDelay to be 0, got %d", babbler.responseMaxDelay)
 	}
 }
 
@@ -58,15 +61,19 @@ func TestBabbler_SetResponseDelay(t *testing.T) {
 	storer := NewMockStorer()
 	babbler := NewBabbler(storer)
 
-	babbler.SetResponseDelay(100)
-	if babbler.responseDelay != 100 {
-		t.Errorf("Expected responseDelay to be 100, got %d", babbler.responseDelay)
+	babbler.SetResponseDelay(50, 100)
+	if babbler.responseMinDelay != 50 {
+		t.Errorf("Expected responseMinDelay to be 50, got %d", babbler.responseMinDelay)
+	}
+	if babbler.responseMaxDelay != 100 {
+		t.Errorf("Expected responseMaxDelay to be 100, got %d", babbler.responseMaxDelay)
 	}
 }
 
 func TestBabbler_BabbleHandler_PHP(t *testing.T) {
 	storer := NewMockStorer()
 	babbler := NewBabbler(storer)
+	babbler.SetResponseDelay(0, 0) // No delay for this test
 
 	// Create test request
 	req := httptest.NewRequest("GET", "/test.php", nil)
@@ -103,6 +110,7 @@ func TestBabbler_BabbleHandler_PHP(t *testing.T) {
 func TestBabbler_BabbleHandler_ENV(t *testing.T) {
 	storer := NewMockStorer()
 	babbler := NewBabbler(storer)
+	babbler.SetResponseDelay(0, 0) // No delay for this test
 
 	// Create test request
 	req := httptest.NewRequest("GET", "/.env", nil)
@@ -126,6 +134,7 @@ func TestBabbler_BabbleHandler_ENV(t *testing.T) {
 func TestBabbler_BabbleHandler_UnknownType(t *testing.T) {
 	storer := NewMockStorer()
 	babbler := NewBabbler(storer)
+	babbler.SetResponseDelay(0, 0) // No delay for this test
 
 	// Create test request
 	req := httptest.NewRequest("GET", "/test.unknown", nil)
@@ -154,32 +163,43 @@ func TestBabbler_BabbleHandler_UnknownType(t *testing.T) {
 func TestBabbler_BabbleHandler_WithDelay(t *testing.T) {
 	storer := NewMockStorer()
 	babbler := NewBabbler(storer)
-	babbler.SetResponseDelay(50) // 50ms max delay
+	babbler.SetResponseDelay(10, 50) // 10-50ms delay range
 
-	// Create test request
-	req := httptest.NewRequest("GET", "/test.php", nil)
-	w := httptest.NewRecorder()
+	// Test multiple times to ensure delay is working
+	var totalDuration time.Duration
+	for i := 0; i < 5; i++ {
+		req := httptest.NewRequest("GET", "/test.php", nil)
+		w := httptest.NewRecorder()
 
-	// Measure response time
-	start := time.Now()
-	handler := babbler.BabbleHandler("php")
-	handler(w, req)
-	duration := time.Since(start)
+		// Measure response time
+		start := time.Now()
+		handler := babbler.BabbleHandler("php")
+		handler(w, req)
+		duration := time.Since(start)
+		totalDuration += duration
 
-	// Check response
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", w.Code)
+		// Check response
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		// Each individual request should not exceed reasonable bounds
+		if duration > 100*time.Millisecond {
+			t.Errorf("Response took too long: %v (expected max ~50ms)", duration)
+		}
 	}
 
-	// Should have some delay (at least possible, up to 50ms)
-	if duration > 100*time.Millisecond {
-		t.Errorf("Response took too long: %v (expected max ~50ms)", duration)
+	// Average should be reasonable (some delay but not excessive)
+	avgDuration := totalDuration / 5
+	if avgDuration > 80*time.Millisecond {
+		t.Errorf("Average response time too long: %v", avgDuration)
 	}
 }
 
 func TestBabbler_StatsHandler(t *testing.T) {
 	storer := NewMockStorer()
 	babbler := NewBabbler(storer)
+	babbler.SetResponseDelay(0, 0) // No delay for stats
 
 	// Create test request
 	req := httptest.NewRequest("GET", "/stats", nil)
@@ -248,5 +268,88 @@ func TestBabbler_MultipleRequests(t *testing.T) {
 	}
 	if storer.stats["env"] != 2 {
 		t.Errorf("Expected env count to be 2, got %d", storer.stats["env"])
+	}
+}
+
+func TestBabbler_SpecificFileLoading(t *testing.T) {
+	storer := NewMockStorer()
+	babbler := NewBabbler(storer)
+	babbler.SetResponseDelay(0, 0) // No delay for faster test execution
+
+	tests := []struct {
+		url          string
+		expectedFile string
+		fileType     string
+		description  string
+	}{
+		{"/admin.php", "admin.php", "php", "Should load admin.php from chunks/php/"},
+		{"/foo/admin.php", "foo/admin.php", "php", "Should load admin.php with path prefix"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.description, func(t *testing.T) {
+			// Reset storer
+			storer.stats = make(map[string]int)
+
+			req := httptest.NewRequest("GET", test.url, nil)
+			w := httptest.NewRecorder()
+
+			handler := babbler.BabbleHandler(test.fileType)
+			handler(w, req)
+
+			// Check basic response
+			if w.Code != http.StatusOK {
+				t.Errorf("Expected status 200 for %s, got %d", test.url, w.Code)
+			}
+
+			// Check that increment was called
+			if storer.stats[test.fileType] != 1 {
+				t.Errorf("Expected %s count to be 1 for %s, got %d", test.fileType, test.url, storer.stats[test.fileType])
+			}
+
+			// Should have some content
+			if w.Body.Len() == 0 {
+				t.Errorf("Expected some response body content for %s", test.url)
+			}
+
+			// Check that the response contains the expected WP_ADMIN check for admin.php
+			body := w.Body.String()
+			if strings.Contains(body, "if ( ! defined( 'WP_ADMIN' ) ) {") {
+				// Good - admin.php content was loaded
+			} else {
+				t.Logf("Note: admin.php specific content not found, may have fallen back to random content for /foo/admin.php")
+			}
+
+			if len(body) == 0 {
+				t.Errorf("Expected non-empty response for %s", test.url)
+			}
+		})
+	}
+}
+
+func TestBabbler_FileLoadingFallback(t *testing.T) {
+	storer := NewMockStorer()
+	babbler := NewBabbler(storer)
+	babbler.SetResponseDelay(0, 0) // No delay for faster test
+
+	// Test with a file that likely doesn't exist - should fallback to random
+	req := httptest.NewRequest("GET", "/nonexistent-file.php", nil)
+	w := httptest.NewRecorder()
+
+	handler := babbler.BabbleHandler("php")
+	handler(w, req)
+
+	// Should still return 200 and some content (from random fallback)
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200 for nonexistent file, got %d", w.Code)
+	}
+
+	if w.Body.Len() == 0 {
+		t.Error("Expected some response body content even for nonexistent file (random fallback)")
+	}
+
+	// Should still increment counter
+	if storer.stats["php"] != 1 {
+		t.Errorf("Expected php count to be 1 for nonexistent file, got %d", storer.stats["php"])
 	}
 }

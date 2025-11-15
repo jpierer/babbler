@@ -24,42 +24,63 @@ Babbler is a Go library that serves fake sensitive files (like `.env`, `config.p
 package main
 
 import (
-    "net/http"
+	"log"
+	"net/http"
 
-    "github.com/go-chi/chi/middleware"
-    "github.com/go-chi/chi/v5"
-    "github.com/jpierer/babbler"
+	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/chi/v5"
+	"github.com/jpierer/babbler"
 )
 
 func main() {
-    // Initialize Chi router
-    r := chi.NewRouter()
+	// Initialize Chi router
+	r := chi.NewRouter()
 
-    // Add logging middleware to see all requests
-    r.Use(middleware.Logger)
+	// Add middleware
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
 
-    // Your normal application route
-    r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-        w.Write([]byte("normal app"))
-    })
+	// Initialize Babbler
+	storagePath := "./data"
+	jsonStorer := babbler.NewJSONStorer(storagePath)
+	babblerInstance := babbler.NewBabbler(jsonStorer)
+	babblerInstance.SetResponseDelay(500, 2000) // 500ms to 2000ms delay
 
-    // Initialize Babbler with JSON storage backend
-    // This stores simple counters for how often each file type is requested
-    babblerStorer := babbler.NewJSONStorer("./data")
-    babbler := babbler.NewBabbler(babblerStorer)
+	// Normal application routes
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"message": "Babbler server is running", "status": "online"}`))
+	})
 
-    // Configure response delay to waste more bot time (0-200ms random delay)
-    babbler.SetResponseDelay(200)
+	// Stats endpoint
+	r.Get("/babbler/stats", babblerInstance.StatsHandler())
 
-    // Stats endpoint to view request counters by file type
-    r.Get("/babbler/stats", babbler.StatsHandler())
+	// === Babble routes ===
+	// Honeypot routes that catch common attack patterns and waste bot time
+	// These need to be BEFORE any general slug routes to catch .php and .env files
 
-    // Honeypot routes that catch common attack patterns and waste bot time
-    r.Get("/*.php", babbler.BabbleHandler("php"))     // Serves fake PHP files to bots
-    r.Get("/*.env", babbler.BabbleHandler("env"))     // Serves fake .env files to bots
+	// First: catch files in subdirectories (must be before single-segment routes)
+	r.Route("/{segment}", func(sr chi.Router) {
+		sr.Get("/{file}.php", babblerInstance.BabbleHandler("php"))
+		sr.Get("/{file}.env", babblerInstance.BabbleHandler("env"))
+		// This allows /wp-content/themes/about.php, /config/database.php, etc.
+	})
 
-    // Start the server
-    http.ListenAndServe(":3000", r)
+	// Second: catch files in root directory
+	r.Get("/{file}.php", babblerInstance.BabbleHandler("php"))
+	r.Get("/{file}.env", babblerInstance.BabbleHandler("env"))
+
+	// Additional dynamic routes of your web app (if needed for your project)
+	// r.Get("/{slug}/*", someOtherHandler())  // This would come AFTER babble routes
+	// r.Get("/{slug}", somePageHandler())     // This would come AFTER babble routes
+
+	port := ":8080"
+	log.Printf("Server starting on http://localhost%s", port)
+	log.Printf("Babbler Stats available at: http://localhost%s/babbler/stats", port)
+
+	if err := http.ListenAndServe(port, r); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }
 ```
 
